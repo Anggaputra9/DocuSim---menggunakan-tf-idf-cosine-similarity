@@ -1,6 +1,6 @@
 # DocuSim — Dokumen Similarity (Laravel + Python TF-IDF)
 
-Sistem berbasis web untuk mendeteksi kemiripan **abstrak** terhadap **corpus dokumen referensi** menggunakan algoritma **TF-IDF + Cosine Similarity** (scikit-learn). UI dibangun dengan **Laravel 11 + Tailwind + Chart.js**, sementara perhitungan ML dilakukan oleh **Python**.
+Sistem berbasis web untuk mendeteksi kemiripan **abstrak** terhadap **corpus dokumen referensi** menggunakan algoritma **TF-IDF + Cosine Similarity**. UI dibangun dengan **Laravel 11 + Tailwind + Chart.js**. Perhitungan model bisa pakai dua driver: **PHP native** (default, tanpa dependency) atau **Python scikit-learn**.
 
 ---
 
@@ -36,77 +36,82 @@ Sistem berbasis web untuk mendeteksi kemiripan **abstrak** terhadap **corpus dok
 
 ### Bagaimana Model Terintegrasi
 
-Pendekatan yang dipakai: **Laravel memanggil Python sebagai child process**, bukan REST API terpisah. Lebih ringan untuk skripsi/portofolio dan tidak butuh infra tambahan (Flask/FastAPI/uvicorn).
+Sistem mendukung **dua driver** yang bisa di-switch dari `.env`:
 
-Alur detail satu siklus pengecekan:
+#### Driver 1: PHP native (default — `SIMILARITY_DRIVER=php`)
 
-1. **User submit form** abstrak → `POST /similarity/check` (controller `SimilarityController@check`).
-2. **Controller** validasi input lalu panggil `SimilarityService->check($abstract, $topK)`.
-3. **Service** mengambil seluruh corpus dari DB (Eloquent), lalu meng-encode payload JSON:
-   ```json
-   {"query": "...abstrak input...", "corpus": [...], "top_k": 5}
-   ```
-4. **Symfony Process** mengeksekusi `python python/similarity.py` dan mengirim payload via **stdin**.
-5. **Python** preprocessing (lowercase, hilangkan tanda baca, hapus stopword Bahasa Indonesia), build matrix TF-IDF (`TfidfVectorizer` dengan `ngram_range=(1,2)` & `sublinear_tf=True`), hitung `cosine_similarity` antara query dan setiap dokumen corpus, dan kembalikan ranking + bobot kata terpenting via **stdout** dalam format JSON.
-6. **Service** men-decode output, **Controller** menyimpan ke tabel `similarity_checks` dan redirect ke halaman hasil.
-7. **View** `similarity/show.blade.php` me-render visualisasi (gauge, bar chart, word importance) dengan Chart.js.
+TF-IDF + Cosine ditulis ulang di PHP dengan formula yang **sama persis** dengan sklearn `TfidfVectorizer` (smooth IDF: `ln((1+N)/(1+df)) + 1`, l2-normalize, ngram 1-2). Tidak ada child process, tidak ada Python — anti-error winsock/firewall di Windows. Semua jalan di proses Laravel sendiri.
+
+Alur:
+1. `SimilarityController@check` validasi input → `SimilarityService->check()`.
+2. Service pilih driver (default `php`) → delegasi ke `TfIdfPhpService->check()`.
+3. `TfIdfPhpService` ambil corpus dari DB, tokenize (lowercase, hapus tanda baca, stopword Bahasa Indonesia, ngram 1-2), hitung DF, IDF, vector TF-IDF, l2-normalize, lalu cosine similarity = dot product.
+4. Hasil ranking + top terms dikembalikan ke controller, disimpan di `similarity_checks`, di-render Chart.js.
+
+#### Driver 2: Python (`SIMILARITY_DRIVER=python`)
+
+Pakai jika ingin model lebih advanced (IndoBERT/Sastrawi/Word2Vec). Laravel meng-eksekusi `python/similarity.py` via Symfony Process, kirim JSON via stdin, terima hasil via stdout. Kontrak JSON: `{query, corpus, top_k}` ↔ `{ok, results, top_terms, highest_score}`.
 
 Komponen kunci di kode:
 
 | Tugas | File |
 |---|---|
-| Model TF-IDF + Cosine | `python/similarity.py` |
-| Jembatan Laravel ↔ Python | `app/Services/SimilarityService.php` |
-| Konfigurasi binary Python | `config/similarity.php` (env `PYTHON_BIN`) |
+| Model TF-IDF native PHP | `app/Services/TfIdfPhpService.php` |
+| Router driver | `app/Services/SimilarityService.php` |
+| Model TF-IDF Python (opsional) | `python/similarity.py` |
+| Konfigurasi driver & python binary | `config/similarity.php` (env `SIMILARITY_DRIVER`, `PYTHON_BIN`) |
 | Persisten corpus | `app/Models/CorpusDocument.php` + migration |
 | Persisten history | `app/Models/SimilarityCheck.php` (kolom `results` & `top_terms` dicast `array`) |
 | Visualisasi | `resources/views/similarity/show.blade.php` (Chart.js) |
 
 ### Mengganti Model
 
-Karena kontraknya **JSON di stdin/stdout**, kamu bisa mengganti `python/similarity.py` dengan:
+- Tetap pakai PHP, ubah preprocessing/stopword/n-gram di `app/Services/TfIdfPhpService.php`.
+- Pindah ke Python untuk model deep learning: set `SIMILARITY_DRIVER=python` di `.env`, edit `python/similarity.py`, contoh: ganti `TfidfVectorizer` dengan `SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')`.
 
-- Sentence-BERT / IndoBERT (`sentence-transformers`) — cukup ubah cara membentuk embedding sebelum cosine similarity.
-- Word2Vec / FastText — load model `.bin` di Python, hitung average embedding per dokumen.
-- Algoritma Indonesia-specific (Sastrawi stemmer, dst) — tinggal preprocess di `preprocess()`.
-
-Selama format input/output JSON-nya sama, **tidak ada perubahan apapun** yang dibutuhkan di sisi Laravel.
+Selama format JSON-nya tetap sama, **tidak ada perubahan apapun** yang dibutuhkan di sisi Laravel.
 
 ---
 
 ## Persyaratan
 
 - PHP ≥ 8.2, Composer
-- Python ≥ 3.10
 - SQLite (default Laravel) — sudah otomatis ter-create
+- (Opsional) Python ≥ 3.10 + scikit-learn — hanya jika pakai driver `python`
 
 ## Instalasi
 
 ```bash
-# 1. Install Laravel deps (sudah dilakukan saat create-project)
+# 1. Install Laravel deps
 composer install
 
-# 2. Install Python deps untuk model
-pip install -r python/requirements.txt
-
-# 3. Migrasi & seed corpus contoh (10 dokumen)
+# 2. Migrasi & seed corpus contoh (10 dokumen)
 php artisan migrate:fresh --seed
 
-# 4. (Opsional) atur path python di .env jika python tidak ada di PATH
-# PYTHON_BIN="C:/Python312/python.exe"
-
-# 5. Jalankan server
+# 3. Jalankan server
 php artisan serve
 ```
 
-Buka `http://127.0.0.1:8000`.
+Buka `http://127.0.0.1:8000`. Driver PHP aktif by default — siap pakai tanpa dependency tambahan.
 
-## Konfigurasi
+### (Opsional) Aktifkan driver Python
 
-`.env` (opsional):
+```bash
+pip install -r python/requirements.txt
+```
+
+Lalu di `.env`:
 
 ```dotenv
-PYTHON_BIN=python                # default. Bisa diubah ke python3 / venv path absolut
+SIMILARITY_DRIVER=python
+PYTHON_BIN=python                # atau path absolut python.exe
+```
+
+## Konfigurasi `.env`
+
+```dotenv
+SIMILARITY_DRIVER=php            # php (default) | python
+PYTHON_BIN=python                # binary python (jika driver=python)
 SIMILARITY_TOP_K=5               # default jumlah dokumen yang ditampilkan
 ```
 
