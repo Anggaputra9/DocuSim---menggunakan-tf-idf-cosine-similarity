@@ -2,60 +2,77 @@
 @section('title', 'Riwayat Pengecekan')
 
 @section('content')
-    <div class="flex items-center justify-between mb-8">
+    <div class="flex items-end justify-between mb-8 flex-wrap gap-4">
         <div>
-            <h1 class="text-3xl font-bold">Riwayat Pengecekan</h1>
-            <p class="text-slate-500 mt-1">Daftar abstrak yang pernah dianalisis sistem.</p>
+            <span class="nb-tag">// history</span>
+            <h1 class="nb-display text-4xl md:text-5xl mt-3">Riwayat Pengecekan.</h1>
+            <p class="font-semibold text-black/70 mt-2">Daftar abstrak yang pernah dianalisis sistem.</p>
         </div>
-        <a href="{{ route('similarity.create') }}" class="gradient-bg text-white px-5 py-3 rounded-xl font-semibold hover:opacity-95 inline-flex items-center gap-2">
-            + Cek Baru
+        <a href="{{ route('similarity.create') }}"
+           class="nb-bg-yellow nb-border px-5 py-3 font-bold nb-shadow nb-btn inline-flex items-center gap-2">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="3" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
+            CEK BARU
         </a>
     </div>
 
-    <div class="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+    <div class="bg-white nb-border nb-shadow overflow-hidden">
         @if($checks->isEmpty())
-            <p class="text-slate-400 text-center p-12">Belum ada riwayat. Silakan lakukan pengecekan pertama.</p>
+            <div class="text-center p-16">
+                <p class="nb-display text-2xl">// kosong</p>
+                <p class="font-semibold mt-2 text-black/60">Belum ada riwayat. Silakan lakukan pengecekan pertama.</p>
+            </div>
         @else
-            <table class="w-full text-sm">
-                <thead class="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider">
-                    <tr>
-                        <th class="text-left px-6 py-3">Judul / Abstrak</th>
-                        <th class="text-left px-6 py-3">Skor Tertinggi</th>
-                        <th class="text-left px-6 py-3">Tanggal</th>
-                        <th class="text-right px-6 py-3">Aksi</th>
-                    </tr>
-                </thead>
-                <tbody class="divide-y divide-slate-100">
-                    @foreach($checks as $c)
-                        @php $pct = round($c->highest_score * 100, 1); @endphp
-                        <tr class="hover:bg-slate-50">
-                            <td class="px-6 py-4">
-                                <a href="{{ route('similarity.show', $c) }}" class="font-medium text-slate-800 hover:text-indigo-600 line-clamp-1">
-                                    {{ $c->input_title ?: 'Tanpa judul' }}
-                                </a>
-                                <p class="text-xs text-slate-400 line-clamp-1 mt-1">{{ \Illuminate\Support\Str::limit($c->input_abstract, 100) }}</p>
-                            </td>
-                            <td class="px-6 py-4">
-                                <div class="flex items-center gap-2">
-                                    <div class="w-24 bg-slate-100 rounded-full h-2 overflow-hidden">
-                                        <div class="h-2 {{ $pct >= 70 ? 'bg-rose-500' : ($pct >= 40 ? 'bg-amber-500' : 'bg-emerald-500') }}" style="width: {{ $pct }}%"></div>
-                                    </div>
-                                    <span class="font-semibold {{ $pct >= 70 ? 'text-rose-600' : ($pct >= 40 ? 'text-amber-600' : 'text-emerald-600') }}">{{ $pct }}%</span>
-                                </div>
-                            </td>
-                            <td class="px-6 py-4 text-slate-500">{{ $c->created_at->format('d M Y H:i') }}</td>
-                            <td class="px-6 py-4 text-right">
-                                <a href="{{ route('similarity.show', $c) }}" class="text-indigo-600 hover:underline text-sm">Detail</a>
-                                <form action="{{ route('similarity.destroy', $c) }}" method="POST" class="inline" onsubmit="return confirm('Hapus?')">
-                                    @csrf @method('DELETE')
-                                    <button class="text-rose-600 hover:underline text-sm ml-3">Hapus</button>
-                                </form>
-                            </td>
+            <div class="overflow-x-auto">
+                <table class="nb-table">
+                    <thead>
+                        <tr>
+                            <th>Judul / Abstrak</th>
+                            <th>Skor Tertinggi</th>
+                            <th>Tanggal</th>
+                            <th class="text-right" style="text-align:right">Aksi</th>
                         </tr>
-                    @endforeach
-                </tbody>
-            </table>
-            <div class="px-6 py-4 border-t border-slate-100">{{ $checks->links() }}</div>
+                    </thead>
+                    <tbody>
+                        @foreach($checks as $c)
+                            @php
+                                $pct = round($c->highest_score * 100, 1);
+                                if ($pct >= 70)     { $tone = 'nb-bg-pink';   $fill = '#EF4444'; $tag = 'PLAGIAT?'; }
+                                elseif ($pct >= 40) { $tone = 'nb-bg-orange'; $fill = '#FB923C'; $tag = 'SEDANG'; }
+                                else                { $tone = 'nb-bg-lime';   $fill = '#10B981'; $tag = 'AMAN'; }
+                            @endphp
+                            <tr>
+                                <td>
+                                    <a href="{{ route('similarity.show', $c) }}" class="font-bold hover:bg-[var(--nb-yellow)] line-clamp-1">
+                                        {{ $c->input_title ?: 'Tanpa judul' }}
+                                    </a>
+                                    <p class="text-xs font-medium text-black/60 line-clamp-1 mt-1">{{ \Illuminate\Support\Str::limit($c->input_abstract, 100) }}</p>
+                                </td>
+                                <td>
+                                    <div class="flex items-center gap-3">
+                                        <div class="w-28 nb-score-track">
+                                            <div class="nb-score-fill" style="width: {{ $pct }}%; background: {{ $fill }}"></div>
+                                        </div>
+                                        <span class="nb-display text-base">{{ $pct }}%</span>
+                                        <span class="nb-badge {{ $tone }}">{{ $tag }}</span>
+                                    </div>
+                                </td>
+                                <td class="text-sm font-semibold">{{ $c->created_at->format('d M Y H:i') }}</td>
+                                <td style="text-align:right">
+                                    <div class="inline-flex gap-2">
+                                        <a href="{{ route('similarity.show', $c) }}"
+                                           class="nb-bg-sky nb-border-2 px-3 py-1.5 text-xs font-bold nb-btn">DETAIL</a>
+                                        <form action="{{ route('similarity.destroy', $c) }}" method="POST" onsubmit="return confirm('Hapus?')">
+                                            @csrf @method('DELETE')
+                                            <button class="nb-bg-pink nb-border-2 px-3 py-1.5 text-xs font-bold nb-btn">HAPUS</button>
+                                        </form>
+                                    </div>
+                                </td>
+                            </tr>
+                        @endforeach
+                    </tbody>
+                </table>
+            </div>
+            <div class="px-6 py-4 border-t-2 border-black bg-[var(--nb-bg)]">{{ $checks->links() }}</div>
         @endif
     </div>
 @endsection
